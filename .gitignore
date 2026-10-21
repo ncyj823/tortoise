@@ -1,0 +1,15 @@
+# secrets: real keys live in .env and its copies; only the example is tracked
+.env
+.env.*
+!.env.example
+
+# runtime data (company details, outputs) and its backups
+*.db
+*.db.bak-*
+
+# logs, caches, local environment
+*.log
+__pycache__/
+.pytest_cache/
+.venv/
+*.bak
