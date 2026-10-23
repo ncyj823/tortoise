@@ -3,13 +3,100 @@
 They run in code after the LLM claim checker, on every sentence and visual, and its labels cannot
 override them. Each issue is {"where", "claim", "reason"}; content.py adds the part name.
 """
+from __future__ import annotations
+
 import re
 import unicodedata
+from typing import Dict, List, Optional
+
+from pydantic import BaseModel, Field
+
+from . import offerings
+from .offerings import ProductOffering
 
 APPROVED_PLACEHOLDERS = ("[CTA]", "[PRICE]", "[WHERE TO GET IT]", "[PLATFORMS]", "[WHAT THE USER SEES]",
                          "[DATA HANDLING]")
 REQUIRED_RATIOS = {"hook": ("9:16", "4:5"), "short": ("9:16", "4:5"), "explainer": ("16:9",)}
 UI_PLACEHOLDER = "[WHAT THE USER SEES]"
+
+
+# ---------------------------------------------------------------- Content Verifier & Results
+class CheckResult(BaseModel):
+    """Encapsulates the structured outcome of a deterministic content verification audit."""
+    passed: bool = Field(..., description="Indicates whether all validation checks passed successfully.")
+    forbidden_terms_found: List[str] = Field(default_factory=list, description="Blacklisted terminology detected in the text.")
+    unauthorized_claims: List[str] = Field(default_factory=list, description="Extracted claims failing strict claim-bank validation.")
+    pricing_violations: List[str] = Field(default_factory=list, description="Pricing figures found that violate established boundaries.")
+    details: str = Field(..., description="Human-readable summary of the verification audit.")
+
+
+class ContentVerifier:
+    """Deterministic assertion engine for validating generated content against the Protected Claim Bank."""
+    
+    def __init__(self, offering_id: str = "core_agent_suite_v1") -> None:
+        self.offering_id = offering_id
+
+    def verify_content(self, text: str, extracted_claims: Optional[List[str]] = None) -> CheckResult:
+        """Executes deterministic assertion checks on draft content:
+        1. Forbidden terms scan.
+        2. Price boundary enforcement.
+        3. Strict claim-bank matching for extracted claims.
+        """
+        offering = offerings.claim_bank.get_offering(self.offering_id)
+        if not offering:
+            return CheckResult(
+                passed=False,
+                details=f"Validation failed: Offering ID '{self.offering_id}' not found in registry."
+            )
+
+        # 1. Scan forbidden terms
+        forbidden_found = offerings.claim_bank.scan_forbidden_terms(self.offering_id, text)
+
+        # 2. Enforce price boundaries
+        pricing_violations = self._check_pricing_boundaries(text, offering.pricing_boundaries)
+
+        # 3. Strict claim-bank matching
+        unauthorized: List[str] = []
+        if extracted_claims:
+            for claim in extracted_claims:
+                if not offerings.claim_bank.validate_claim(self.offering_id, claim):
+                    unauthorized.append(claim)
+
+        passed = len(forbidden_found) == 0 and len(pricing_violations) == 0 and len(unauthorized) == 0
+
+        details = (
+            "All verification checks passed successfully." 
+            if passed 
+            else "Validation errors detected: rule violations found in draft content."
+        )
+
+        return CheckResult(
+            passed=passed,
+            forbidden_terms_found=forbidden_found,
+            unauthorized_claims=unauthorized,
+            pricing_violations=pricing_violations,
+            details=details
+        )
+
+    def _check_pricing_boundaries(self, text: str, boundaries: Dict[str, float]) -> List[str]:
+        """Scans text for currency patterns and verifies them against permitted boundaries."""
+        violations: List[str] = []
+        price_pattern = r'\$([0-9]+\.?[0-9]*)'
+        matches = re.findall(price_pattern, text)
+        
+        allowed_prices = set(boundaries.values())
+        for match in matches:
+            try:
+                val = float(match)
+                if val not in allowed_prices:
+                    violations.append(f"Unauthorized price detected: ${val}. Permitted boundaries: {sorted(list(allowed_prices))}")
+            except ValueError:
+                continue
+        return violations
+
+
+# Global singleton verifier instance
+verifier = ContentVerifier()
 
 
 # ---------------------------------------------------------------- splitting copy into lines
@@ -146,6 +233,43 @@ def claim_bank(ls: list[dict], labels: dict[int, str], products: list) -> list[d
         else:
             reason = "describes the product but is not word for word from the claim bank"
         issues.append({**_ref(x), "reason": f"rule: {reason}"})
+    return issues
+
+
+# ---------------------------------------------------------------- 3. forbidden terms & pricing
+def forbidden_terms(ls: list[dict], products: list) -> list[dict]:
+    """Every sentence, on-screen text or caption must not contain blacklisted terms."""
+    issues = []
+    for x in ls:
+        text_lower = x["text"].lower()
+        for p in products:
+            terms = getattr(p, "forbidden_terms", None) or getattr(p, "never_claim_terms", [])
+            for term in terms:
+                if term.lower() in text_lower:
+                    issues.append({**_ref(x), "reason": f"rule: contains forbidden term '{term}' for {p.name}"})
+    return issues
+
+
+def pricing(ls: list[dict], products: list) -> list[dict]:
+    """Pricing numbers mentioned must match allowed pricing boundaries for the product."""
+    issues = []
+    price_pattern = re.compile(r'\$([0-9]+\.?[0-9]*)')
+    for x in ls:
+        matches = price_pattern.findall(x["text"])
+        if not matches:
+            continue
+        for p in products:
+            bounds = getattr(p, "pricing_boundaries", {})
+            if not bounds:
+                continue
+            allowed = set(bounds.values())
+            for match in matches:
+                try:
+                    val = float(match)
+                    if val not in allowed:
+                        issues.append({**_ref(x), "reason": f"rule: unauthorized price ${val} for {p.name}; permitted: {sorted(allowed)}"})
+                except ValueError:
+                    continue
     return issues
 
 
