@@ -262,8 +262,13 @@ def _chat(system: str, user: str, max_tokens: int, options: dict | None = None, 
 
         body = r.text[:500]
         if r.status_code == 429:
+            retry_header = r.headers.get("retry-after")
+            sleep_time = float(retry_header) if retry_header and retry_header.replace(".", "", 1).isdigit() else 10 * (attempt + 1)
+            m = re.search(r"try again in (\d+\.?\d*)s", body, re.I)
+            if m:
+                sleep_time = max(sleep_time, float(m.group(1)) + 1.0)
             if attempt < 5:
-                time.sleep(10 * (attempt + 1))
+                time.sleep(sleep_time)
                 continue
             if _is_quota_or_server_error(body):
                 fb = _try_fallback(mt)
@@ -486,7 +491,7 @@ def start_onboarding(p: dict) -> str:
                   (tid, p["work_email"], p.get("user_name"), p.get("user_role"),
                    p.get("timezone") or "Asia/Kolkata", p.get("language") or "English",
                    p.get("website") or f"https://{tid}", "researching",
-                   dt.datetime.utcnow().isoformat()))
+                   dt.datetime.now(dt.timezone.utc).isoformat()))
     return tid
 
 
@@ -571,6 +576,7 @@ def _build_playbooks(tid: str, brain: dict, timezone: str, language: str):
         if not isinstance(pb, dict) or not pb.get("mission"):
             raise LLMOutputError(f"Playbook for {agent} has no 'mission'")
         playbooks[agent] = pb
+        time.sleep(1.0)  # Gentle pacing between playbook calls to respect provider RPM/TPM limits
     wprompt = (f"Write a short, friendly welcome_message in {language} for this company.\n"
                f"Company brain (compact):\n{brain_str}\n"
                "Include: 1) what you learned about the company (max 5 bullets) 2) one line per agent "
@@ -730,7 +736,7 @@ def run_agent(tid: str, agent: str, instruction: str = "") -> str:
             text = f"**Language check: this draft is meant to be in {lang}, but {issue}. Review before use.**\n\n{text}"
     with db() as c:
         c.execute("INSERT INTO outputs(tenant_id,agent,content,created_at) VALUES(?,?,?,?)",
-                  (tid, agent, text, dt.datetime.utcnow().isoformat()))
+                  (tid, agent, text, dt.datetime.now(dt.timezone.utc).isoformat()))
     return text
 
 

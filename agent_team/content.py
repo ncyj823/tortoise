@@ -631,7 +631,7 @@ def build_package(tid: str, t: dict, text: str, intent: Intent) -> dict:
         head += (f'UNKNOWN TOPIC: "{intent.topic}" is not described in any source above. Do not say what it does, '
                  "how it works, what it connects to or what it produces. Refer to it by name and use placeholders "
                  "wherever a product detail is needed. Ask about those details in open_questions.\n")
-    banned = list(dict.fromkeys(x for r in products for x in r.never_claim_terms))
+    banned = list(dict.fromkeys(x for r in products for x in (getattr(r, "forbidden_terms", None) or r.never_claim_terms)))
     if products:
         head += ("FOCUS PRODUCT: " + ", ".join(r.name for r in products) + ". Describe it ONLY with sentences "
                  "copied word for word from its CLAIM BANK. Do not borrow capabilities from other offerings.\n")
@@ -705,6 +705,20 @@ def build_package(tid: str, t: dict, text: str, intent: Intent) -> dict:
                         "reason": f"the claim check failed ({e}), so nothing in this part is verified"})
         bad += [{"part": PART_NAMES[key], **r} for r in checks.claim_bank(ls, labels, products)]
         rules = checks.run_all(_copy(parts[key]), products, leak_terms, all_facts, t.get("language") or "English")
+        # Deterministic verification audit via ContentVerifier (pricing boundaries and constraints)
+        for p in products:
+            p_id = getattr(p, "offering_id", None) or p.name
+            ver = checks.ContentVerifier(p_id)
+            for line_info in ls:
+                text_to_audit = line_info.get("text", "")
+                audit_res = ver.verify_content(text_to_audit)
+                for price_violation in audit_res.pricing_violations:
+                    bad.append({
+                        "part": PART_NAMES[key],
+                        "where": line_info.get("where", "copy"),
+                        "claim": text_to_audit,
+                        "reason": f"rule: {price_violation}"
+                    })
         return bad + [{"part": PART_NAMES[key], **r} for r in rules]
 
     unverified = []
@@ -802,5 +816,5 @@ def run_command(tid: str, text: str) -> dict:
     with core.db() as c:
         oid = c.execute("INSERT INTO outputs(tenant_id,agent,content,created_at,status) VALUES(?,?,?,?,?)",
                         (tid, "content", json.dumps(stored, ensure_ascii=False),
-                         dt.datetime.utcnow().isoformat(), "draft")).lastrowid
+                         dt.datetime.now(dt.timezone.utc).isoformat(), "draft")).lastrowid
     return {"output_id": oid, **stored, "warning": warning}

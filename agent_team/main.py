@@ -130,6 +130,17 @@ def change_language(tid: str, body: LanguageIn, bg: BackgroundTasks):
     return {"status": "changing", "language": lang}
 
 
+@app.post("/tenants/{tid}/clear-error")
+def clear_tenant_error(tid: str):
+    t = core.get_tenant(tid)
+    if not t:
+        raise HTTPException(404, "Tenant not found")
+    with core.db() as c:
+        c.execute("UPDATE tenants SET error=NULL WHERE id=?", (tid,))
+    return {"status": "ok", "error": None}
+
+
+
 class RunIn(BaseModel):
     instruction: str = ""
 
@@ -206,7 +217,7 @@ def decide(tid: str, output_id: int, body: DecisionIn):
         raise HTTPException(400, 'status must be "approved" or "rejected"')
     with core.db() as c:
         n = c.execute("UPDATE outputs SET status=?, note=?, decided_at=? WHERE id=? AND tenant_id=?",
-                      (status, body.note.strip(), core.dt.datetime.utcnow().isoformat(), output_id, tid)).rowcount
+                      (status, body.note.strip(), core.dt.datetime.now(core.dt.timezone.utc).isoformat(), output_id, tid)).rowcount
     if not n:
         raise HTTPException(404, "Output not found")
     return {"id": output_id, "status": status, "note": body.note.strip()}
