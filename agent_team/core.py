@@ -181,12 +181,14 @@ def fetch_page(url: str, limit: int = 5000) -> str:
         return "(could not fetch website)"
 
 
-def _chat(system: str, user: str, max_tokens: int, options: dict | None = None, label: str = "") -> str:
+def _chat(system: str, user: str, max_tokens: int, options: dict | None = None, label: str = "",
+          model: str | None = None) -> str:
     """OpenAI-compatible chat completion with fallback + truncation handling.
-    `options` are extra request fields for this call only (e.g. reasoning_effort); `label` names it in the log."""
+    `options` are extra request fields for this call only (e.g. reasoning_effort); `label` names it in the log;
+    `model` overrides LLM_MODEL for this call only."""
     base = (os.getenv("LLM_BASE_URL") or "").strip().rstrip("/")
     key = (os.getenv("LLM_API_KEY") or "").strip()
-    model = (os.getenv("LLM_MODEL") or "").strip()
+    model = (model or os.getenv("LLM_MODEL") or "").strip()
     if not base:
         raise LLMError("LLM_BASE_URL is empty in .env")
     if not model:
@@ -329,10 +331,11 @@ def _chat(system: str, user: str, max_tokens: int, options: dict | None = None, 
 
 def ask(system: str, user: str, search: bool = False, max_tokens: int | None = None,
         seed: list[str] | None = None, extra: str = "", label: str = "", llm_options: dict | None = None,
-        provider: str | None = None) -> str:
+        provider: str | None = None, model: str | None = None) -> str:
     """One LLM call. `seed` = search queries to run; `extra` = extra context (e.g. website text).
     `label` names the call in the log; `llm_options` are extra request fields for this call only
-    (OpenAI-compatible providers; ignored on the Anthropic path). `provider` overrides LLM_PROVIDER for this call."""
+    (OpenAI-compatible providers; ignored on the Anthropic path). `provider` overrides LLM_PROVIDER and `model`
+    overrides LLM_MODEL for this call (the model only on OpenAI-compatible providers)."""
     if (provider or PROVIDER).lower() != "anthropic":
         mt = max_tokens or int(os.getenv("LLM_MAX_TOKENS", "8000"))
         if search:
@@ -349,7 +352,7 @@ def ask(system: str, user: str, search: bool = False, max_tokens: int | None = N
                     queries = [user[:80]]
             user += ("\n\nWEB SEARCH RESULTS (cite these URLs as sources; mark anything not supported here as unknown):\n"
                      + gather(queries) + (("\n\n" + extra) if extra else ""))
-        return _chat(system, user, mt, llm_options, label)
+        return _chat(system, user, mt, llm_options, label, model)
 
     # Anthropic path (native web search tool)
     tools = [{"type": "web_search_20250305", "name": "web_search", "max_uses": 15}] if search else []

@@ -90,6 +90,8 @@ def fake_ask(route="content", prompts=None, verify=None, posts_text=None, edit=N
 def client(tmp_path, monkeypatch):
     monkeypatch.setattr(core, "DB_PATH", str(tmp_path / "test.db"))
     monkeypatch.setenv("ANTHROPIC_API_KEY", "test-key")      # the checker's provider is mocked with core.ask
+    for k in ("CHECKER_PROVIDER", "CHECKER_MODEL"):
+        monkeypatch.delenv(k, raising=False)
     monkeypatch.setattr(core, "ask", fake_ask())
     monkeypatch.setattr(core, "web_search", lambda q, n=6: [])
     monkeypatch.setattr(core, "fetch_page", lambda url, limit=5000: PAGES.get(url, ""))
@@ -241,9 +243,29 @@ def test_checker_uses_its_own_provider_and_the_writer_groq_low(client, monkeypat
     assert writer and all(k.get("provider") is None and k["llm_options"] == {"reasoning_effort": "low"} for k in writer)
 
 
-def test_missing_anthropic_key_fails_before_any_llm_call(client, monkeypatch):
+def test_without_an_anthropic_key_the_checker_runs_on_groq_at_medium(client, monkeypatch, caplog):
+    calls, base = [], fake_ask()
+
+    def ask(system, user, **kw):
+        calls.append((user, kw))
+        return base(system, user, **kw)
+    monkeypatch.delenv("ANTHROPIC_API_KEY")
+    monkeypatch.setattr(core, "ask", ask)
+    with caplog.at_level("INFO", logger="agent_team.llm"):
+        r = command(client)
+    assert r.status_code == 200, r.text
+    checker = [k for u, k in calls if "TASK: verify" in u]
+    writer = [k for u, k in calls if "TASK: verify" not in u]
+    assert checker and all(k["provider"] == "groq" and k["model"] == "openai/gpt-oss-120b"
+                           and k["llm_options"] == {"reasoning_effort": "medium"} for k in checker)
+    assert writer and all(k.get("provider") is None and k["llm_options"] == {"reasoning_effort": "low"} for k in writer)
+    assert any("checker provider=groq model=openai/gpt-oss-120b reasoning_effort=medium" in m for m in caplog.messages)
+
+
+def test_checker_forced_to_anthropic_without_a_key_fails_before_any_llm_call(client, monkeypatch):
     calls = []
     monkeypatch.delenv("ANTHROPIC_API_KEY")
+    monkeypatch.setenv("CHECKER_PROVIDER", "anthropic")
     monkeypatch.setattr(core, "ask", lambda *a, **k: calls.append(a) or "{}")
     r = command(client)
     assert r.status_code == 502 and "ANTHROPIC_API_KEY" in r.json()["detail"] and calls == []

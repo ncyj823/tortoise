@@ -79,6 +79,14 @@ def test_anthropic_without_a_key_is_a_clear_llm_error(monkeypatch):
         core.ask("sys", "user", provider="anthropic")
 
 
+def test_model_override_applies_to_that_call_only(llm):
+    sent, replies = llm
+    replies += [Resp("a"), Resp("b")]
+    core.ask("sys", "user", model="checker-model")
+    core.ask("sys", "user")
+    assert [s["model"] for s in sent] == ["checker-model", "m"]
+
+
 def test_llm_options_apply_to_that_call_only(llm):
     sent, replies = llm
     replies += [Resp("a"), Resp("b")]

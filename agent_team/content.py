@@ -33,7 +33,8 @@ PART_NAMES = {"A": "campaign summary, hook and short video", "B": "explainer vid
 RESEARCHED_SOURCE = "Company brief (researched from public sources)"
 PLACEHOLDERS = "[CTA], [PRICE], [WHERE TO GET IT], [PLATFORMS], [WHAT THE USER SEES], [DATA HANDLING]"
 LLM_OPTIONS = {"reasoning_effort": "low"}       # content agent's writer calls; other agents keep the default
-CHECKER_PROVIDER = os.getenv("CHECKER_PROVIDER", "anthropic")   # the claim checker; the writer stays on LLM_PROVIDER
+CHECKER_OPTIONS = {"reasoning_effort": "medium"}  # claim checker on Groq; the writer stays at low
+CHECKER_GROQ_MODEL = "openai/gpt-oss-120b"
 FAILED = "failed, regenerate"
 SHORTER = ("\n\nYour previous reply was cut off because it was too long. Write a shorter version: fewer scenes "
            "(hook 1-2, short 4-6, explainer 6-8), one sentence per line, at most 5 shot list items, "
@@ -541,18 +542,32 @@ Return ONLY JSON with one entry per line, in order:
 {{"labels":[{{"id":1,"c":"PROBLEM"}},{{"id":2,"c":"PRODUCT"}}]}}"""
 
 
+def checker_config() -> tuple[str, str]:
+    """(provider, model) for the claim checker. CHECKER_PROVIDER (and CHECKER_MODEL) win; otherwise Anthropic
+    when ANTHROPIC_API_KEY is set, else Groq, so the command box works without an Anthropic key."""
+    provider = (os.getenv("CHECKER_PROVIDER") or "").strip().lower()
+    if not provider:
+        provider = "anthropic" if (os.getenv("ANTHROPIC_API_KEY") or "").strip() else "groq"
+    if provider == "anthropic":
+        return provider, core.MODEL
+    return provider, (os.getenv("CHECKER_MODEL") or "").strip() or CHECKER_GROQ_MODEL
+
+
 def classify(key: str, part, product_names: list[str]) -> tuple[list[dict], dict[int, str]]:
-    """The checker (CHECKER_PROVIDER, Anthropic by default) labels every sentence and visual PRODUCT or PROBLEM.
+    """The checker (see checker_config) labels every sentence and visual PRODUCT or PROBLEM.
     The claim bank check in checks.py decides what a PRODUCT line may say."""
     ls = checks.lines(_copy(part))
     if not ls:
         return ls, {}
     listing = "\n".join(f"{i}. [{x['where']}] {x['text']}" for i, x in enumerate(ls, 1))
+    provider, model = checker_config()
+    anthropic = provider == "anthropic"
     out = _llm("You classify marketing copy line by line. Output JSON only.",
                VERIFY_PROMPT.format(key=key, products=", ".join(product_names) or "the company's offerings",
                                     lines=listing),
-               _checker(_Verify), f"check {PART_NAMES[key]}", options=None, provider=CHECKER_PROVIDER,
-               max_tokens=8000 if CHECKER_PROVIDER.lower() == "anthropic" else 5000)   # Groq: 8k tokens/minute
+               _checker(_Verify), f"check {PART_NAMES[key]}", options=None if anthropic else CHECKER_OPTIONS,
+               provider=provider, model=None if anthropic else model,
+               max_tokens=8000 if anthropic else 5000)   # Groq: 8k tokens/minute
     return ls, {x.id: ("PRODUCT" if x.c.strip().upper().startswith("PROD") else "PROBLEM") for x in out.labels}
 
 
@@ -773,9 +788,13 @@ def _videos_check(p):
 
 def run_command(tid: str, text: str) -> dict:
     """Parse the request, build the package, store it as one draft output row."""
-    if CHECKER_PROVIDER.lower() == "anthropic" and not (os.getenv("ANTHROPIC_API_KEY") or "").strip():
-        raise core.LLMError("The claim checker runs on Anthropic (CHECKER_PROVIDER), but ANTHROPIC_API_KEY is not "
-                            "set in .env. Add it and restart the server.")
+    provider, model = checker_config()
+    if provider == "anthropic" and not (os.getenv("ANTHROPIC_API_KEY") or "").strip():
+        raise core.LLMError("The claim checker is set to Anthropic (CHECKER_PROVIDER), but ANTHROPIC_API_KEY is not "
+                            "set in .env. Add it, or remove CHECKER_PROVIDER to check on Groq, and restart the server.")
+    core.llm_log.info("content run for %s: writer model=%s reasoning_effort=%s; checker provider=%s model=%s "
+                      "reasoning_effort=%s", tid, os.getenv("LLM_MODEL") or "-", LLM_OPTIONS["reasoning_effort"],
+                      provider, model, "-" if provider == "anthropic" else CHECKER_OPTIONS["reasoning_effort"])
     t = core.get_tenant(tid)
     intent = parse_intent(text)
     pkg, warning = build_package(tid, t, text, intent)
