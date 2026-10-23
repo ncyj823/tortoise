@@ -4,7 +4,7 @@ import re
 import pytest
 from fastapi.testclient import TestClient
 
-from agent_team import content, core, offerings
+from agent_team import checks, content, core, offerings
 from agent_team.main import app
 
 EM = "—"
@@ -591,3 +591,109 @@ def test_offering_edit_shows_diff_and_refuses_stale_save(client):
     ok = client.put(f"/tenants/{TID}/offerings", json={"rule": edited, "base_version": p["base_version"]})
     assert ok.status_code == 200
     assert client.get(f"/tenants/{TID}/offerings").json()[0]["facts"][-1] == "It works in Chrome."
+
+
+def test_protected_claim_bank_registry_validation_and_forbidden_terms():
+    registry = offerings.ProtectedClaimBankRegistry()
+    offering = registry.get_offering("core_agent_suite_v1")
+    assert offering is not None
+    assert offering.name == "Core Agent Suite"
+
+    # Authorized claim validation
+    valid_claim = "Multi-tenant SQLite persistence with thread-safe connection pooling"
+    assert registry.validate_claim("core_agent_suite_v1", valid_claim)
+    assert not registry.validate_claim("core_agent_suite_v1", "Made up marketing boast")
+    assert not registry.validate_claim("non_existent_offering", valid_claim)
+
+    # Forbidden terms scanning
+    dirty_text = "Our solution guarantees 100% autonomous operation with unlimited scaling and zero human oversight."
+    flagged = registry.scan_forbidden_terms("core_agent_suite_v1", dirty_text)
+    assert "100% autonomous" in flagged
+    assert "unlimited scaling" in flagged
+    assert "zero human oversight" in flagged
+
+    clean_text = "Standard human oversight with deterministic rule checks."
+    assert registry.scan_forbidden_terms("core_agent_suite_v1", clean_text) == []
+
+
+def test_content_verifier_audit_engine():
+    v = checks.ContentVerifier("core_agent_suite_v1")
+
+    # 1. Perfectly compliant content
+    valid_claim = "Deterministic multi-stage drafting pipeline with claim-bank validation"
+    valid_text = "Deploy our platform at $49.00 per month for foundational agent orchestration."
+    res = v.verify_content(valid_text, extracted_claims=[valid_claim])
+    assert res.passed
+    assert res.forbidden_terms_found == []
+    assert res.unauthorized_claims == []
+    assert res.pricing_violations == []
+    assert "All verification checks passed" in res.details
+
+    # 2. Forbidden terms violation
+    bad_term_text = "Experience 100% autonomous operation with instantaneous execution."
+    res_bad_terms = v.verify_content(bad_term_text)
+    assert not res_bad_terms.passed
+    assert "100% autonomous" in res_bad_terms.forbidden_terms_found
+    assert "instantaneous execution" in res_bad_terms.forbidden_terms_found
+
+    # 3. Pricing boundary violation
+    bad_price_text = "Get started today for only $19.99 or $999.00 enterprise tier."
+    res_price = v.verify_content(bad_price_text)
+    assert not res_price.passed
+    assert len(res_price.pricing_violations) == 2
+    assert any("$19.99" in p for p in res_price.pricing_violations)
+    assert any("$999.0" in p for p in res_price.pricing_violations)
+
+    # 4. Unauthorized claim extraction
+    res_claim = v.verify_content("Generic text", extracted_claims=["Unverified boast that was never in claim bank."])
+    assert not res_claim.passed
+    assert res_claim.unauthorized_claims == ["Unverified boast that was never in claim bank."]
+
+    # 5. Non-existent offering
+    v_missing = checks.ContentVerifier("non_existent_offering")
+    res_missing = v_missing.verify_content("Text")
+    assert not res_missing.passed
+    assert "not found in registry" in res_missing.details
+
+
+def test_pipeline_pricing_verification_and_rewrite_flow(client, monkeypatch):
+    # Setup offering with pricing boundaries
+    pricing_rule = offerings.ProductOffering(
+        offering_id="secret_egress_v1",
+        name="Secret Egress",
+        authorized_claims=[
+            "Secret Egress, from ActTrident, blocks credential-like values pasted into AI chatbots, before they leave the browser."
+        ],
+        pricing_boundaries={"standard_monthly": 49.00, "enterprise_monthly": 199.00},
+        forbidden_terms=["unlimited scaling"],
+    )
+    offerings.save(TID, pricing_rule, None)
+
+    # 1. First run: unauthorized price $25.00 triggers rewrite, fixed to $49.00 on rewrite
+    rewrite_triggered = []
+    def dynamic_posts(prompt):
+        if "A check of your previous reply" in prompt:
+            rewrite_triggered.append(True)
+            return "Get standard security at $49.00 monthly."
+        return "Special deal for only $25.00 this month."
+
+    monkeypatch.setattr(core, "ask", fake_ask(posts_text=dynamic_posts))
+    res = command(client).json()
+    pkg = res["package"]
+    assert rewrite_triggered == [True]
+    assert pkg["unverified_claims"] == []
+    assert res["output_id"] is not None
+
+    # Verify output in database has draft status (pending human sign-off)
+    outputs = client.get(f"/tenants/{TID}/outputs", params={"agent": "content"}).json()
+    assert outputs[0]["status"] == "draft"
+
+    # 2. Second run: rewrite does NOT fix unauthorized price, survives to unverified claims
+    monkeypatch.setattr(core, "ask", fake_ask(posts_text=lambda u: "Still unauthorized at $25.00 forever."))
+    res2 = command(client).json()
+    pkg2 = res2["package"]
+    assert any("Unauthorized price detected: $25.0" in u["reason"] for u in pkg2["unverified_claims"])
+    assert any("survived the rewrite" in n for n in pkg2["notes"])
+
+
+
