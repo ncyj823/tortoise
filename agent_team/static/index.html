@@ -1,0 +1,759 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Tortoise, demo</title>
+<style>
+  :root {
+    color-scheme: dark;
+    --bg: #0b0e14;
+    --panel: #141922;
+    --panel-2: #1a2130;
+    --line: #273043;
+    --ink: #e6edf3;
+    --muted: #94a3b8;
+    --accent: #7aa2ff;
+    --ok: #3fb950;
+    --ok-bg: #12351f;
+    --warn: #d29922;
+    --warn-bg: #3a2a0a;
+    --bad: #f85149;
+    --bad-bg: #3d1518;
+  }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; min-height: 100%; }
+  body {
+    background: radial-gradient(1100px 500px at 10% -10%, #18223a 0%, var(--bg) 55%) no-repeat, var(--bg);
+    color: var(--ink);
+    font: 15px/1.55 "Segoe UI", system-ui, -apple-system, BlinkMacSystemFont, Arial, sans-serif;
+  }
+  button, input, select, textarea { font: inherit; color: inherit; }
+  button { cursor: pointer; }
+  button:disabled { opacity: .55; cursor: not-allowed; }
+  :focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+  .wrap { max-width: 1180px; margin: 0 auto; padding: 22px 16px 64px; }
+  .top { display: flex; flex-wrap: wrap; align-items: baseline; justify-content: space-between; gap: 8px; margin-bottom: 10px; }
+  .brand { display: flex; align-items: center; gap: 9px; font-weight: 700; letter-spacing: -.01em; }
+  .brand .dot { width: 10px; height: 10px; border-radius: 50%; background: var(--accent); box-shadow: 0 0 18px var(--accent); }
+  .brand .tag { font-size: 11px; font-weight: 600; color: var(--accent); border: 1px solid #2f4777; background: #142142; border-radius: 999px; padding: 2px 8px; }
+  .banner {
+    background: #1a2130;
+    border: 1px solid #2d3b55;
+    border-left: 4px solid var(--accent);
+    border-radius: 10px;
+    padding: 11px 14px;
+    margin-bottom: 18px;
+    color: #c7d2e5;
+    font-size: 14px;
+  }
+  .panel { background: var(--panel); border: 1px solid var(--line); border-radius: 12px; padding: 16px; }
+  h1, h2, h3, h4 { margin: 0; line-height: 1.25; }
+  h2 { font-size: 17px; }
+  h3 { font-size: 15px; }
+  h4 { font-size: 13px; text-transform: uppercase; letter-spacing: .05em; color: var(--muted); }
+  .muted { color: var(--muted); }
+  .small { font-size: 12px; }
+  .row { display: flex; flex-wrap: wrap; align-items: end; gap: 10px; margin-bottom: 14px; }
+  .row label { font-size: 12px; font-weight: 600; color: var(--muted); text-transform: uppercase; letter-spacing: .04em; }
+  select, textarea, input[type="password"] {
+    width: 100%;
+    background: var(--panel-2);
+    border: 1px solid var(--line);
+    border-radius: 8px;
+    padding: 9px 11px;
+    color: var(--ink);
+  }
+  .keyrow { display: flex; flex-wrap: wrap; align-items: end; gap: 10px; }
+  .keyrow .grow { flex: 1 1 220px; }
+  select { max-width: 340px; }
+  textarea { resize: vertical; min-height: 82px; }
+  .grow { flex: 1 1 260px; }
+  .btn {
+    border: 1px solid transparent;
+    border-radius: 8px;
+    padding: 9px 14px;
+    font-weight: 600;
+    background: var(--panel-2);
+    color: var(--ink);
+  }
+  .btn:hover:not(:disabled) { filter: brightness(1.12); }
+  .btn.primary { background: var(--accent); color: #08101f; }
+  .btn.ghost { background: transparent; border-color: var(--line); color: var(--ink); }
+  .btn.ok { background: var(--ok-bg); border-color: #1f6f3a; color: var(--ok); }
+  .btn.bad { background: var(--bad-bg); border-color: #7a2a2d; color: var(--bad); }
+  .generate { margin-bottom: 16px; }
+  .generate .actions { display: flex; flex-wrap: wrap; align-items: center; gap: 12px; margin-top: 10px; }
+  .error-text { color: var(--bad); }
+  .workspace { display: grid; grid-template-columns: 330px minmax(0, 1fr); gap: 16px; align-items: start; }
+  .drafts { position: sticky; top: 16px; max-height: calc(100vh - 32px); overflow: auto; }
+  .drafts-head { display: flex; align-items: baseline; justify-content: space-between; gap: 8px; margin-bottom: 10px; }
+  #draftlist { display: grid; gap: 8px; }
+  .draft {
+    display: block;
+    width: 100%;
+    text-align: left;
+    background: var(--panel-2);
+    border: 1px solid var(--line);
+    border-radius: 10px;
+    padding: 10px;
+    color: var(--ink);
+  }
+  .draft:hover { border-color: #3a4b6b; }
+  .draft.active { border-color: var(--accent); box-shadow: 0 0 0 1px var(--accent) inset; }
+  .draft-top { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin-bottom: 6px; }
+  .draft-req { display: block; font-weight: 600; font-size: 14px; margin-bottom: 5px; }
+  .chip {
+    display: inline-flex;
+    align-items: center;
+    gap: 5px;
+    border-radius: 999px;
+    padding: 2px 9px;
+    font-size: 11px;
+    font-weight: 700;
+    letter-spacing: .03em;
+    text-transform: uppercase;
+    white-space: nowrap;
+    border: 1px solid transparent;
+  }
+  .chip.ok { background: var(--ok-bg); color: var(--ok); border-color: #1f6f3a; }
+  .chip.warn { background: var(--warn-bg); color: var(--warn); border-color: #6b531a; }
+  .chip.bad { background: var(--bad-bg); color: var(--bad); border-color: #7a2a2d; }
+  .chip.ghost { background: transparent; color: var(--muted); border-color: var(--line); text-transform: none; letter-spacing: 0; font-weight: 500; }
+  .detail { min-width: 0; }
+  .empty { padding: 40px 18px; text-align: center; color: var(--muted); }
+  .detail-head { display: flex; flex-wrap: wrap; justify-content: space-between; gap: 12px; align-items: start; margin-bottom: 12px; }
+  .detail-head h2 { margin: 8px 0 3px; font-size: 20px; }
+  .decide { display: flex; gap: 8px; flex-wrap: wrap; }
+  .violations { background: var(--bad-bg); border: 1px solid #7a2a2d; border-radius: 10px; padding: 12px 14px; margin: 12px 0; }
+  .violations h3 { color: var(--bad); font-size: 14px; margin-bottom: 8px; }
+  .violations ol { margin: 0; padding-left: 20px; }
+  .violations li { margin: 9px 0; }
+  .vwhere { font-size: 12px; font-weight: 700; color: #ffb3ad; }
+  .vclaim { margin: 2px 0; white-space: pre-wrap; }
+  .vreason { font-size: 13px; color: #e5a9a5; }
+  .repair { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; margin: 10px 0; }
+  .notes { background: var(--panel-2); border: 1px solid var(--line); border-radius: 10px; padding: 11px 14px; margin: 12px 0; }
+  .notes ul { margin: 6px 0 0; padding-left: 20px; }
+  .tabs { display: flex; gap: 4px; border-bottom: 1px solid var(--line); margin: 16px 0 14px; overflow-x: auto; }
+  .tabs button {
+    background: none;
+    border: 0;
+    border-bottom: 2px solid transparent;
+    color: var(--muted);
+    padding: 9px 12px;
+    font-weight: 600;
+    white-space: nowrap;
+  }
+  .tabs button[aria-selected="true"] { color: var(--ink); border-bottom-color: var(--accent); }
+  .fields { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+  .fields .wide { grid-column: 1 / -1; }
+  .fields > div, .sub { background: var(--panel-2); border: 1px solid var(--line); border-radius: 10px; padding: 11px 13px; }
+  .fields p { margin: 5px 0 0; white-space: pre-wrap; }
+  .k { display: block; font-size: 11px; font-weight: 700; color: var(--muted); text-transform: uppercase; letter-spacing: .05em; }
+  .sub { margin-top: 12px; }
+  .sub ul, .sub ol { margin: 7px 0 0; padding-left: 20px; }
+  .video { border-top: 1px solid var(--line); padding-top: 14px; margin-top: 14px; }
+  .video:first-child { border-top: 0; padding-top: 0; margin-top: 0; }
+  .video-head { display: flex; flex-wrap: wrap; align-items: baseline; justify-content: space-between; gap: 6px; }
+  .caption { background: var(--panel-2); border: 1px solid var(--line); border-radius: 8px; padding: 8px 11px; margin: 10px 0; }
+  .scene { display: grid; grid-template-columns: 26px minmax(0, 1fr); gap: 8px; border-top: 1px solid var(--line); padding: 9px 0; }
+  .scenenum { width: 22px; height: 22px; border-radius: 50%; background: var(--panel-2); border: 1px solid var(--line); display: grid; place-items: center; font-size: 11px; font-weight: 700; color: var(--muted); }
+  .scene p { margin: 2px 0; }
+  .post { border-top: 1px solid var(--line); padding: 14px 0; }
+  .post:first-child { border-top: 0; padding-top: 0; }
+  .post-head { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin-bottom: 8px; }
+  .copy { white-space: pre-wrap; margin: 0 0 8px; }
+  .article h3 { font-size: 18px; }
+  .doc { white-space: pre-wrap; line-height: 1.65; margin-top: 6px; }
+  .failed { background: var(--bad-bg); border: 1px solid #7a2a2d; border-radius: 10px; padding: 12px 14px; color: #ffb3ad; }
+  .tidier { margin-top: 16px; }
+  .tidier-head { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 10px; }
+  .stats { display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; margin-top: 12px; }
+  .stat { background: var(--panel-2); border: 1px solid var(--line); border-radius: 10px; padding: 12px; text-align: center; }
+  .statnum { display: block; font-size: 24px; font-weight: 700; line-height: 1.1; }
+  .statlabel { display: block; font-size: 12px; color: var(--muted); text-transform: uppercase; letter-spacing: .05em; margin-top: 3px; }
+  .stat.ok .statnum { color: var(--ok); }
+  .stat.warn .statnum { color: var(--warn); }
+  .stat.bad .statnum { color: var(--bad); }
+  .toast {
+    position: fixed;
+    left: 50%;
+    bottom: 20px;
+    transform: translateX(-50%) translateY(16px);
+    background: #e6edf3;
+    color: #0b0e14;
+    border-radius: 8px;
+    padding: 10px 16px;
+    font-weight: 600;
+    opacity: 0;
+    pointer-events: none;
+    transition: opacity .18s, transform .18s;
+    max-width: calc(100vw - 32px);
+    z-index: 20;
+  }
+  .toast.show { opacity: 1; transform: translateX(-50%) translateY(0); }
+  .toast.error { background: var(--bad); color: #fff; }
+  .footer { margin-top: 18px; color: var(--muted); font-size: 12px; line-height: 1.5; }
+  @media (max-width: 860px) {
+    .workspace { grid-template-columns: 1fr; }
+    .drafts { position: static; max-height: 300px; }
+    .fields { grid-template-columns: 1fr; }
+    .detail-head { flex-direction: column; }
+    .decide { width: 100%; }
+    .decide .btn { flex: 1 1 120px; }
+  }
+  @media (max-width: 420px) {
+    .stats { grid-template-columns: 1fr; }
+    .wrap { padding: 16px 12px 48px; }
+  }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header>
+    <div class="top">
+      <div class="brand"><span class="dot"></span> Tortoise <span class="tag">demo</span></div>
+      <span class="muted small">Local demo, no account needed</span>
+    </div>
+    <div class="banner">Nothing is published. Every item is a draft for human approval.</div>
+    <div class="banner" id="keybar" hidden>
+      <div class="keyrow">
+        <div class="grow">
+          <label for="demokey">Demo key</label>
+          <input id="demokey" type="password" autocomplete="off" placeholder="Paste the X-Demo-Key value">
+        </div>
+        <button type="button" class="btn primary" id="savekey">Use key</button>
+        <span class="muted small">Kept in this tab only, never stored.</span>
+      </div>
+    </div>
+  </header>
+
+  <section class="panel generate" aria-labelledby="request-label">
+    <div class="row">
+      <div class="grow">
+        <label id="request-label" for="tenant">Tenant</label>
+        <select id="tenant" aria-label="Tenant"></select>
+      </div>
+      <button type="button" class="btn ghost" id="refresh">Refresh drafts</button>
+    </div>
+    <label for="request">Request</label>
+    <textarea id="request" rows="3" placeholder="We're running a Facebook ad campaign for the Brightleaf Subscription. Give me the videos and structure."></textarea>
+    <div class="actions">
+      <button type="button" class="btn primary" id="generate">Generate package</button>
+      <span id="genmsg" class="muted small" aria-live="polite"></span>
+    </div>
+  </section>
+
+  <div class="workspace">
+    <aside class="panel drafts" aria-labelledby="drafts-heading">
+      <div class="drafts-head">
+        <h2 id="drafts-heading">Drafts <span class="muted small" id="draftcount"></span></h2>
+      </div>
+      <div id="draftlist"><p class="muted small">Loading drafts...</p></div>
+    </aside>
+
+    <section class="panel detail" aria-live="polite">
+      <div id="empty" class="empty">Pick a draft, or generate a package above.</div>
+      <div id="detail" hidden>
+        <div class="detail-head">
+          <div>
+            <div id="chip"></div>
+            <h2 id="drafttitle"></h2>
+            <p id="draftmeta" class="muted small"></p>
+          </div>
+          <div class="decide">
+            <button type="button" class="btn ok" id="approve">Approve</button>
+            <button type="button" class="btn bad" id="reject">Reject</button>
+          </div>
+        </div>
+        <div id="violations"></div>
+        <div id="notes"></div>
+        <nav class="tabs" id="tabs" role="tablist" aria-label="Package sections"></nav>
+        <div id="tabbody"></div>
+      </div>
+    </section>
+  </div>
+
+  <section class="panel tidier" aria-labelledby="tidier-heading">
+    <div class="tidier-head">
+      <div>
+        <h2 id="tidier-heading">Tidier</h2>
+        <p class="muted small" style="margin:4px 0 0">A deterministic sweep of drafts and needs review items. It does not edit a draft unless you ask it to.</p>
+      </div>
+      <button type="button" class="btn ghost" id="runTidier">Run now</button>
+    </div>
+    <div id="tidierStats" class="stats"></div>
+    <p id="tidierMeta" class="muted small" style="margin:10px 0 0"></p>
+  </section>
+  <footer class="footer">Sample data is fictional (Brightleaf Coffee). Nothing is ever published; every item is a draft for human approval.</footer>
+</div>
+<div id="toast" class="toast" role="status" aria-live="polite"></div>
+
+<script>
+"use strict";
+
+const state = { tenant: null, drafts: [], currentId: null, tab: "summary", report: null, demoKey: "" };
+const $ = (selector) => document.querySelector(selector);
+
+function esc(value) {
+  return String(value ?? "").replace(/[&<>"']/g, (c) => ({
+    "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;"
+  }[c]));
+}
+
+function fmtDate(value) {
+  if (!value) return "";
+  const date = new Date(value);
+  return Number.isNaN(date.getTime()) ? String(value) : date.toLocaleString();
+}
+
+function truncate(value, limit) {
+  const text = String(value ?? "");
+  return text.length > limit ? text.slice(0, limit - 3).trimEnd() + "..." : text;
+}
+
+async function api(url, options) {
+  const response = await fetch(url, options);
+  const text = await response.text();
+  let data = text;
+  try { data = text ? JSON.parse(text) : null; } catch (e) { /* keep text */ }
+  if (!response.ok) {
+    if (response.status === 401 || response.status === 403) $("#keybar").hidden = false;
+    const detail = data && typeof data === "object" ? (data.detail || data.error) : data;
+    throw new Error(detail || (response.status + " " + response.statusText));
+  }
+  return data;
+}
+
+function headers(extra) {
+  const out = Object.assign({}, extra || {});
+  if (state.demoKey) out["X-Demo-Key"] = state.demoKey;
+  return out;
+}
+
+function toast(message, isError) {
+  const node = $("#toast");
+  node.textContent = message;
+  node.className = "toast show" + (isError ? " error" : "");
+  clearTimeout(toast._timer);
+  toast._timer = setTimeout(() => { node.className = "toast"; }, 4200);
+}
+
+function parseOutput(row) {
+  let content = {};
+  try {
+    content = typeof row.content === "string" ? JSON.parse(row.content) : (row.content || {});
+  } catch (e) { content = {}; }
+  const pkg = content.package || content || {};
+  const violations = Array.isArray(content.violations) && content.violations.length
+    ? content.violations
+    : (Array.isArray(pkg.unverified_claims) ? pkg.unverified_claims : []);
+  let repair = row.repair_log;
+  if (typeof repair === "string") {
+    try { repair = JSON.parse(repair); } catch (e) { repair = []; }
+  }
+  if (!Array.isArray(repair)) {
+    repair = Array.isArray(content.repair_log) ? content.repair_log : [];
+  }
+
+  let compliance;
+  if (row.status === "needs_review" || violations.length) {
+    compliance = { cls: "bad", label: "needs review" };
+  } else if (repair.length) {
+    const tries = Math.max.apply(null, repair.map((x) => Number(x.attempt) || 0).concat(repair.length));
+    compliance = { cls: "warn", label: "fixed in " + tries + (tries === 1 ? " try" : " tries") };
+  } else {
+    compliance = { cls: "ok", label: "clean" };
+  }
+
+  return Object.assign({}, row, {
+    content: content,
+    pkg: pkg,
+    violations: violations,
+    repair: repair,
+    compliance: compliance
+  });
+}
+
+async function loadTenants() {
+  const select = $("#tenant");
+  try {
+    const all = await api("/tenants");
+    const ready = all.filter((t) => t.status === "ready");
+    const list = ready.length ? ready : all;
+    if (!list.length) {
+      select.innerHTML = "<option>No tenants</option>";
+      select.disabled = true;
+      $("#generate").disabled = true;
+      $("#draftlist").innerHTML = '<p class="muted small">Create a tenant with the onboarding page first.</p>';
+      return;
+    }
+    let saved = null;
+    try { saved = localStorage.getItem("demo-tenant"); } catch (e) { saved = null; }
+    state.tenant = list.some((t) => t.id === saved) ? saved : list[0].id;
+    select.innerHTML = list.map((t) =>
+      '<option value="' + esc(t.id) + '">' + esc(t.id) + " (" + esc(t.status) + ")</option>"
+    ).join("");
+    select.value = state.tenant;
+    select.disabled = false;
+    select.onchange = () => {
+      state.tenant = select.value;
+      state.currentId = null;
+      state.tab = "summary";
+      try { localStorage.setItem("demo-tenant", state.tenant); } catch (e) { /* ignore */ }
+      loadDrafts();
+      loadTidier();
+    };
+    await Promise.all([loadDrafts(), loadTidier()]);
+  } catch (error) {
+    select.innerHTML = "<option>Tenants unavailable</option>";
+    toast(error.message, true);
+  }
+}
+
+async function loadDrafts() {
+  const list = $("#draftlist");
+  if (!state.tenant) return;
+  list.innerHTML = '<p class="muted small">Loading drafts...</p>';
+  try {
+    const rows = await api("/tenants/" + encodeURIComponent(state.tenant) + "/outputs?agent=content");
+    state.drafts = rows.map(parseOutput);
+    if (state.currentId == null || !state.drafts.some((d) => d.id === state.currentId)) {
+      state.currentId = state.drafts.length ? state.drafts[0].id : null;
+    }
+    renderDrafts();
+    renderDetail();
+  } catch (error) {
+    list.innerHTML = '<p class="error-text small">' + esc(error.message) + "</p>";
+  }
+}
+
+function renderDrafts() {
+  const list = $("#draftlist");
+  $("#draftcount").textContent = state.drafts.length ? "(" + state.drafts.length + ")" : "";
+  if (!state.drafts.length) {
+    list.innerHTML = '<p class="muted small">No content drafts yet. Generate one above.</p>';
+    return;
+  }
+  list.innerHTML = state.drafts.map((draft) => {
+    const request = draft.content.request || "Campaign package";
+    const count = draft.violations.length;
+    return '<button type="button" class="draft' + (draft.id === state.currentId ? " active" : "") +
+      '" data-id="' + draft.id + '">' +
+      '<span class="draft-top"><span class="chip ' + draft.compliance.cls + '">' + esc(draft.compliance.label) +
+      '</span><span class="muted small">' + esc(fmtDate(draft.created_at)) + "</span></span>" +
+      '<span class="draft-req">' + esc(truncate(request, 95)) + "</span>" +
+      '<span class="muted small">#' + draft.id + " &middot; " + esc(draft.status) +
+      (count ? " &middot; " + count + (count === 1 ? " violation" : " violations") : "") +
+      "</span></button>";
+  }).join("");
+  list.querySelectorAll(".draft").forEach((button) => {
+    button.onclick = () => {
+      state.currentId = Number(button.dataset.id);
+      state.tab = "summary";
+      renderDrafts();
+      renderDetail();
+    };
+  });
+}
+
+function currentDraft() {
+  return state.drafts.find((d) => d.id === state.currentId) || null;
+}
+
+function renderDetail() {
+  const draft = currentDraft();
+  $("#empty").hidden = Boolean(draft);
+  $("#detail").hidden = !draft;
+  if (!draft) return;
+
+  $("#chip").innerHTML = '<span class="chip ' + draft.compliance.cls + '">' + esc(draft.compliance.label) + "</span>";
+  $("#drafttitle").textContent = truncate(draft.content.request || ("Campaign package #" + draft.id), 140);
+  $("#draftmeta").innerHTML = "Draft #" + esc(draft.id) + " &middot; " + esc(fmtDate(draft.created_at)) +
+    " &middot; backend status: " + esc(draft.status);
+  $("#approve").disabled = draft.status === "approved";
+  $("#reject").disabled = draft.status === "rejected";
+
+  renderViolations(draft);
+  renderNotes(draft);
+  renderTabs();
+  renderTab();
+}
+
+function renderViolations(draft) {
+  const box = $("#violations");
+  let html = "";
+  if (draft.violations.length) {
+    html += '<div class="violations"><h3>Needs review, ' + draft.violations.length +
+      (draft.violations.length === 1 ? " violation" : " violations") + "</h3><ol>" +
+      draft.violations.map((v) => {
+        return "<li><div class=\"vwhere\">" + esc(v.part || "Package") +
+          (v.where ? " &middot; " + esc(v.where) : "") +
+          '</div><div class="vclaim">' + esc(v.claim) + '</div><div class="vreason">' +
+          esc(v.reason) + "</div></li>";
+      }).join("") + "</ol></div>";
+  } else if (draft.compliance.cls === "bad") {
+    html += '<div class="violations"><h3>Needs review</h3><p>No violation details were stored for this draft.</p></div>';
+  }
+  if (draft.repair.length) {
+    html += '<div class="repair"><span class="muted small">Repair attempts:</span>' +
+      draft.repair.map((r) => '<span class="chip ghost">attempt ' + esc(r.attempt) + ", " +
+        esc(r.violations) + " left</span>").join("") + "</div>";
+  }
+  box.innerHTML = html;
+}
+
+function renderNotes(draft) {
+  const notes = Array.isArray(draft.pkg.notes) ? draft.pkg.notes : [];
+  $("#notes").innerHTML = notes.length
+    ? '<div class="notes"><strong>Notes</strong><ul>' + notes.map((n) => "<li>" + esc(n) + "</li>").join("") + "</ul></div>"
+    : "";
+}
+
+const TABS = [["summary", "Summary"], ["videos", "Videos"], ["posts", "Posts"], ["article", "Article"]];
+
+function renderTabs() {
+  const node = $("#tabs");
+  node.innerHTML = TABS.map(([key, label]) =>
+    '<button type="button" role="tab" data-tab="' + key + '" aria-selected="' +
+    (state.tab === key ? "true" : "false") + '">' + label + "</button>"
+  ).join("");
+  node.querySelectorAll("button").forEach((button) => {
+    button.onclick = () => {
+      state.tab = button.dataset.tab;
+      renderTabs();
+      renderTab();
+    };
+  });
+}
+
+function empty(message) {
+  return '<p class="muted" style="padding:18px 4px">' + esc(message) + "</p>";
+}
+
+function failed(part, name) {
+  if (!part) return empty("No " + name.toLowerCase() + " in this package.");
+  return '<div class="failed"><strong>' + esc(name) + " failed.</strong> " +
+    esc(part.error || "This part is not available.") + "</div>";
+}
+
+function summaryHtml(pkg) {
+  const summary = pkg.campaign_summary;
+  if (!summary || summary.status === "FAILED") return failed(summary, "Summary");
+  let html = '<div class="fields">' +
+    '<div><span class="k">Goal</span><p>' + esc(summary.goal) + "</p></div>" +
+    '<div><span class="k">Audience</span><p>' + esc(summary.audience) + "</p></div>" +
+    '<div class="wide"><span class="k">Core message</span><p>' + esc(summary.core_message) + "</p></div>" +
+    '<div class="wide"><span class="k">Call to action</span><p>' + esc(summary.call_to_action) + "</p></div>" +
+    "</div>";
+  if (Array.isArray(pkg.open_questions) && pkg.open_questions.length) {
+    html += '<div class="sub"><h4>Open questions</h4><ul>' +
+      pkg.open_questions.map((q) => "<li>" + esc(q) + "</li>").join("") + "</ul></div>";
+  }
+  if (Array.isArray(pkg.sources) && pkg.sources.length) {
+    html += '<div class="sub"><h4>Sources</h4><ul>' +
+      pkg.sources.map((source) => "<li>" + esc(source.claim) +
+        (source.source ? ' <span class="muted">' + esc(source.source) + "</span>" : "") + "</li>").join("") +
+      "</ul></div>";
+  }
+  return html;
+}
+
+function videoHtml(name, video) {
+  if (!video) return "";
+  if (video.status === "FAILED") return failed(video, name);
+  const scenes = (video.scenes || []).map((scene, index) =>
+    '<div class="scene"><div class="scenenum">' + (index + 1) + "</div><div>" +
+    (scene.line ? '<p><span class="k">Line</span> ' + esc(scene.line) + "</p>" : "") +
+    (scene.on_screen_text ? '<p><span class="k">On screen</span> ' + esc(scene.on_screen_text) + "</p>" : "") +
+    (scene.visual ? '<p><span class="k">Visual</span> ' + esc(scene.visual) + "</p>" : "") +
+    "</div></div>"
+  ).join("");
+  const ratios = Array.isArray(video.aspect_ratios) ? video.aspect_ratios.join(" / ") : "";
+  return '<article class="video"><div class="video-head"><h3>' + esc(name) + "</h3>" +
+    '<span class="muted small">' + esc(video.duration_seconds) + "s" +
+    (ratios ? " &middot; " + esc(ratios) : "") + "</span></div>" +
+    (video.caption ? '<p class="caption">' + esc(video.caption) + "</p>" : "") +
+    '<div class="scenes">' + scenes + "</div>" +
+    (Array.isArray(video.shot_list) && video.shot_list.length
+      ? '<div class="sub"><h4>Shot list</h4><ul>' +
+        video.shot_list.map((shot) => "<li>" + esc(shot) + "</li>").join("") + "</ul></div>"
+      : "") + "</article>";
+}
+
+function videosHtml(pkg) {
+  const videos = pkg.videos || {};
+  const html = videoHtml("Hook", videos.hook) + videoHtml("Short", videos.short) + videoHtml("Explainer", videos.explainer);
+  return html || empty("No videos in this package.");
+}
+
+function postsHtml(pkg) {
+  const posts = pkg.posts;
+  if (!Array.isArray(posts)) return failed(posts, "Posts");
+  if (!posts.length) return empty("No posts in this package.");
+  return posts.map((post) => {
+    const hashtags = Array.isArray(post.hashtags) && post.hashtags.length
+      ? '<span class="muted small">' + esc(post.hashtags.map((tag) => "#" + String(tag).replace(/^#/, "")).join(" ")) + "</span>"
+      : "";
+    return '<article class="post"><div class="post-head"><span class="chip ghost">' + esc(post.platform) +
+      "</span>" + hashtags + "</div>" +
+      '<p class="copy">' + esc(post.text) + "</p>" +
+      (post.notes ? '<p class="muted small"><span class="k">Notes</span> ' + esc(post.notes) + "</p>" : "") +
+      "</article>";
+  }).join("");
+}
+
+function articleHtml(pkg) {
+  const article = pkg.article;
+  if (!article) return empty("No article in this package.");
+  if (article.status === "FAILED") return failed(article, "Article");
+  return '<article class="article"><h3>' + esc(article.title) + "</h3>" +
+    '<div class="sub"><h4>Outline</h4><ol>' +
+    (article.outline || []).map((item) => "<li>" + esc(item) + "</li>").join("") + "</ol></div>" +
+    '<div class="sub"><h4>Draft</h4><div class="doc">' + esc(article.draft) + "</div></div></article>";
+}
+
+function renderTab() {
+  const draft = currentDraft();
+  if (!draft) return;
+  const pkg = draft.pkg;
+  const body = $("#tabbody");
+  if (state.tab === "videos") body.innerHTML = videosHtml(pkg);
+  else if (state.tab === "posts") body.innerHTML = postsHtml(pkg);
+  else if (state.tab === "article") body.innerHTML = articleHtml(pkg);
+  else body.innerHTML = summaryHtml(pkg);
+}
+
+async function generate() {
+  if (!state.tenant) return toast("Pick a tenant first", true);
+  const text = $("#request").value.trim();
+  if (!text) {
+    $("#request").focus();
+    return toast("Type a request first", true);
+  }
+  const button = $("#generate");
+  const message = $("#genmsg");
+  button.disabled = true;
+  button.textContent = "Generating...";
+  message.className = "muted small";
+  message.textContent = "Writing the package. This can take a minute.";
+  try {
+    const output = await api("/tenants/" + encodeURIComponent(state.tenant) + "/command", {
+      method: "POST",
+      headers: headers({ "content-type": "application/json" }),
+      body: JSON.stringify({ text: text })
+    });
+    $("#request").value = "";
+    state.currentId = output.output_id;
+    state.tab = "summary";
+    await loadDrafts();
+    message.textContent = "Draft #" + output.output_id + " saved. Nothing is published.";
+    toast("Draft #" + output.output_id + " created");
+  } catch (error) {
+    message.className = "error-text small";
+    message.textContent = error.message;
+    toast(error.message, true);
+  } finally {
+    button.disabled = false;
+    button.textContent = "Generate package";
+  }
+}
+
+async function decide(status) {
+  const draft = currentDraft();
+  if (!draft) return;
+  const approve = $("#approve");
+  const reject = $("#reject");
+  approve.disabled = true;
+  reject.disabled = true;
+  try {
+    await api("/tenants/" + encodeURIComponent(state.tenant) + "/outputs/" + draft.id, {
+      method: "PATCH",
+      headers: headers({ "content-type": "application/json" }),
+      body: JSON.stringify({ status: status, note: "" })
+    });
+    toast(status === "approved" ? "Draft approved" : "Draft rejected");
+    await loadDrafts();
+  } catch (error) {
+    toast(error.message, true);
+    renderDetail();
+  }
+}
+
+function renderTidier(report) {
+  state.report = report;
+  const stats = $("#tidierStats");
+  if (!report) {
+    stats.innerHTML = '<p class="muted small" style="grid-column:1/-1">No tidier run yet. Run it to audit drafts and needs review items.</p>';
+    $("#tidierMeta").textContent = "";
+    return;
+  }
+  const rows = [
+    ["approved", report.approved, "ok"],
+    ["sanitized", report.items_sanitized, "warn"],
+    ["flagged", report.flagged_for_human, "bad"]
+  ];
+  stats.innerHTML = rows.map(([label, value, cls]) =>
+    '<div class="stat ' + cls + '"><span class="statnum">' + (Number(value) || 0) +
+    '</span><span class="statlabel">' + label + "</span></div>"
+  ).join("");
+  const applied = Array.isArray(report.applied) ? report.applied.length : 0;
+  $("#tidierMeta").innerHTML = (Number(report.total_items_processed) || 0) + " item(s) checked" +
+    (report.created_at ? " &middot; " + esc(fmtDate(report.created_at)) : "") +
+    (applied ? " &middot; " + applied + " written back" : " &middot; report only, no drafts edited");
+}
+
+async function loadTidier() {
+  if (!state.tenant) return;
+  try {
+    const report = await api("/tenants/" + encodeURIComponent(state.tenant) + "/tidier/latest");
+    renderTidier(report);
+  } catch (error) {
+    if (/no tidier run/i.test(error.message)) renderTidier(null);
+    else toast(error.message, true);
+  }
+}
+
+async function runTidier() {
+  if (!state.tenant) return toast("Pick a tenant first", true);
+  const button = $("#runTidier");
+  button.disabled = true;
+  button.textContent = "Running...";
+  try {
+    const report = await api("/tenants/" + encodeURIComponent(state.tenant) + "/tidier/run", {
+      method: "POST",
+      headers: headers({ "content-type": "application/json" }),
+      body: "{}"
+    });
+    renderTidier(report);
+    toast("Tidier report ready");
+  } catch (error) {
+    toast(error.message, true);
+  } finally {
+    button.disabled = false;
+    button.textContent = "Run now";
+  }
+}
+
+$("#generate").onclick = generate;
+$("#refresh").onclick = () => { loadDrafts(); loadTidier(); };
+$("#approve").onclick = () => decide("approved");
+$("#reject").onclick = () => decide("rejected");
+$("#runTidier").onclick = runTidier;
+$("#savekey").onclick = () => {
+  const value = $("#demokey").value.trim();
+  if (!value) return toast("Paste the demo key first", true);
+  state.demoKey = value;
+  $("#demokey").value = "";
+  $("#keybar").hidden = true;
+  toast("Demo key saved for this tab");
+};
+$("#request").addEventListener("keydown", (event) => {
+  if ((event.ctrlKey || event.metaKey) && event.key === "Enter") generate();
+});
+
+loadTenants();
+</script>
+</body>
+</html>

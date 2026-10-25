@@ -1,0 +1,21 @@
+services:
+  - type: web
+    name: tortoise
+    runtime: python
+    plan: free
+    buildCommand: pip install -r requirements.txt
+    startCommand: python scripts/demo_seed.py && uvicorn agent_team.main:app --host 0.0.0.0 --port $PORT
+    healthCheckPath: /health
+    envVars:
+      - key: PYTHONUTF8
+        value: "1"
+      - key: PYTHON_VERSION
+        value: "3.12.3"
+      - key: LLM_API_KEY
+        sync: false
+      - key: LLM_BASE_URL
+        sync: false
+      - key: LLM_MODEL
+        sync: false
+      - key: DEMO_KEY
+        sync: false
